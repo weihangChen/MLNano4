@@ -16,12 +16,21 @@ from enum import Enum
 # https://discussions.udacity.com/t/correct-q-value-calculation/174729/2
 # https://discussions.udacity.com/t/please-someone-clear-up-a-couple-of-points-to-me/45365/2
 # https://github.com/studywolf/blog/blob/master/RL/Cat%20vs%20Mouse%20exploration/qlearn.py
+# http://mnemstudio.org/path-finding-q-learning-tutorial.htm
+# http://www.wearepop.com/articles/secret-formula-for-self-learning-computers
 # endregion
 
 # region model class
-class TimeCritical(Enum):
-    Positive = 1
-    Negative = -1
+class Result:
+    def __init__(self):
+        self.Rewards = []
+        self.TrialCount = 0
+
+    def getStats(self):
+        positiveSum = sum([x for x in self.Rewards if x > 0])
+        negativeSum = sum([x for x in self.Rewards if x < 0])
+        msg = 'total positive reward: {0} / total negative reward: {1}'.format(positiveSum, negativeSum)
+        return msg
 
 class Location:
     def __init__(self, x, y):
@@ -36,18 +45,31 @@ class Location:
         return not self.__eq__(other)
 
 class State:
-     def __init__(self, location, timecritical=TimeCritical.Negative, reward=0):
+     def __init__(self, location, next_waypoint, light, left, oncoming,  reward=0):
         self.StateId = uuid.uuid4()
+        #to be removed
         self.Location = location
-        self.TimeCritical = timecritical
+        self.NextWaypoint = next_waypoint
+        self.Light = light
+        self.Left = left
+        self.Oncoming = oncoming
         self.Reward = reward
         self.SAQs = []
+
+
+
      
      def __eq__(self, other):
-        return self.Location == other.Location
+        isEqual = self.NextWaypoint == other.NextWaypoint and self.Light == other.Light and self.Left == other.Left and self.Oncoming == other.Oncoming
+        return isEqual
 
      def __ne__(self, other):
         return not self.__eq__(other)
+
+
+     def __str__(self):
+        msg = 'waypoint: {0} / light: {1} / oncoming: {2} / left: {3}'.format(self.NextWaypoint, self.Light, self.Oncoming, self.Left)
+        return msg
 
 class StateActionQValueModel:
     def __init__(self, state, action, qvalue=0):
@@ -73,9 +95,8 @@ class StateActionQValueModel:
 
 #region qlearning
 class QLearn(object):
-    def __init__(self, epsilon=0.1, alpha=0.2, gamma=0.9):
+    def __init__(self, epsilon=0.1, alpha=0.4, gamma=0.9):
         self.q = {}
-
         self.epsilon = epsilon
         self.alpha = alpha
         self.gamma = gamma
@@ -111,10 +132,6 @@ class QLearn(object):
             foundState = foundStates[0]
         return foundState
 #endregion
-
-
-
-
 class LearningAgent(Agent):
     """An agent that learns to drive in the smartcab world."""
 
@@ -124,13 +141,9 @@ class LearningAgent(Agent):
         self.color = 'red'  # override color
         self.planner = RoutePlanner(self.env, self)  # simple route planner to get next_waypoint
         # TODO: Initialize any additional variables here
-                                                          
-
-        self.QLearn = QLearn(epsilon=0.1, alpha=0.1, gamma=0.5)
-        self.CurrentState = None
-        self.PreviousState = None
-        self.lastsaq = None
-        self.States = []
+        self.QLearn = QLearn(epsilon=0.1, alpha=0.5, gamma=0.5)
+        self.States = []  
+        self.Result = Result()
         
 
     
@@ -138,12 +151,19 @@ class LearningAgent(Agent):
     def reset(self, destination=None):
         self.planner.route_to(destination) 
         # TODO: Prepare for a new trip; reset any variables here, if required
-    
+        self.Result.TrialCount += 1
+        if (self.Result.TrialCount == 98):
+            print self.Result.getStats()
+
     def getAgentLocation(self):
         return self.env.agent_states[self]['location']
 
-    def getStateFromPosition(self, xy):
-        dummyState = State(Location(xy[0], xy[1]))
+   
+
+
+    def getStateFromInputs(self, xy, nextwaypoin, light, left, oncoming):
+        # self, location, next_waypoint, light, left, oncoming, reward=0
+        dummyState = State(Location(xy[0], xy[1]), nextwaypoin, light, left, oncoming)
         foundState = self.QLearn.GetStateCreateIfNotExist(self, dummyState, self.env.valid_actions)
         return foundState
 
@@ -153,21 +173,37 @@ class LearningAgent(Agent):
             self.next_waypoint = self.planner.next_waypoint()  # from route planner, also displayed by simulator
             inputs = self.env.sense(self)
             deadline = self.env.get_deadline(self)
-            currentState = self.getStateFromPosition(self.getAgentLocation())
+            currentState = self.getStateFromInputs(self.getAgentLocation(), 
+                                                   self.next_waypoint, 
+                                                   inputs['light'], 
+                                                   inputs['oncoming'],
+                                                   inputs['left'])
             
         
             # TODO: Update state
-            # do not know what to update, aren't total amount of states a fixed
-            # number = count of traffic light combinations * is time running
-            # out ?
+            self.state = currentState
 
             # TODO: Select action according to your policy
             action = self.QLearn.getActionForMaxQValue(currentState)
+            # action = random.choice(Environment.valid_actions[1:])
             transitionSAQ = next(x for x in currentState.SAQs if x.Action == action)
-            #action = random.choice(Environment.valid_actions[1:])
+            
             # Execute action and get reward
             reward = self.env.act(self, action)
-            stateAfterMove = self.getStateFromPosition(self.getAgentLocation())
+
+            
+            if (self.Result.TrialCount > 60):
+                self.Result.Rewards.append(reward)
+                
+            
+            # sense the env again
+            self.next_waypoint = self.planner.next_waypoint()
+            inputs = self.env.sense(self)
+            stateAfterMove = self.getStateFromInputs(self.getAgentLocation(), 
+                                                   self.next_waypoint, 
+                                                   inputs['light'], 
+                                                   inputs['oncoming'],
+                                                   inputs['left'])
         
             # TODO: Learn policy based on state, action, reward
             self.QLearn.backwardPropagationQValueFromCurrentStateToPreviousState(transitionSAQ, reward, stateAfterMove)
@@ -182,7 +218,8 @@ def run():
     # Set up environment and agent
     e = Environment()  # create environment (also adds some dummy traffic)
     a = e.create_agent(LearningAgent)  # create agent
-    e.set_primary_agent(a, enforce_deadline=False)  # specify agent to track
+    #e.set_primary_agent(a, enforce_deadline=False) # specify agent to track
+    e.set_primary_agent(a, enforce_deadline=True)
     # NOTE: You can set enforce_deadline=False while debugging to allow longer
                                                      # trials
 
