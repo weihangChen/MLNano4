@@ -45,10 +45,8 @@ class Location:
         return not self.__eq__(other)
 
 class State:
-     def __init__(self, location, next_waypoint, light, left, oncoming,  reward=0):
+     def __init__(self, next_waypoint, light, left, oncoming,  reward=0):
         self.StateId = uuid.uuid4()
-        #to be removed
-        self.Location = location
         self.NextWaypoint = next_waypoint
         self.Light = light
         self.Left = left
@@ -95,7 +93,7 @@ class StateActionQValueModel:
 
 #region qlearning
 class QLearn(object):
-    def __init__(self, epsilon=0.1, alpha=0.4, gamma=0.9):
+    def __init__(self, epsilon=0.1, alpha=0.4, gamma=1):
         self.q = {}
         self.epsilon = epsilon
         self.alpha = alpha
@@ -141,7 +139,7 @@ class LearningAgent(Agent):
         self.color = 'red'  # override color
         self.planner = RoutePlanner(self.env, self)  # simple route planner to get next_waypoint
         # TODO: Initialize any additional variables here
-        self.QLearn = QLearn(epsilon=0.1, alpha=0.5, gamma=0.5)
+        self.QLearn = QLearn(epsilon=0.1, alpha=0.3, gamma=1)
         self.States = []  
         self.Result = Result()
         
@@ -152,7 +150,7 @@ class LearningAgent(Agent):
         self.planner.route_to(destination) 
         # TODO: Prepare for a new trip; reset any variables here, if required
         self.Result.TrialCount += 1
-        if (self.Result.TrialCount == 98):
+        if (self.Result.TrialCount == 99):
             print self.Result.getStats()
 
     def getAgentLocation(self):
@@ -161,9 +159,8 @@ class LearningAgent(Agent):
    
 
 
-    def getStateFromInputs(self, xy, nextwaypoin, light, left, oncoming):
-        # self, location, next_waypoint, light, left, oncoming, reward=0
-        dummyState = State(Location(xy[0], xy[1]), nextwaypoin, light, left, oncoming)
+    def getStateFromInputs(self, nextwaypoin, light, left, oncoming):
+        dummyState = State(nextwaypoin, light, left, oncoming)
         foundState = self.QLearn.GetStateCreateIfNotExist(self, dummyState, self.env.valid_actions)
         return foundState
 
@@ -173,8 +170,7 @@ class LearningAgent(Agent):
             self.next_waypoint = self.planner.next_waypoint()  # from route planner, also displayed by simulator
             inputs = self.env.sense(self)
             deadline = self.env.get_deadline(self)
-            currentState = self.getStateFromInputs(self.getAgentLocation(), 
-                                                   self.next_waypoint, 
+            currentState = self.getStateFromInputs(self.next_waypoint, 
                                                    inputs['light'], 
                                                    inputs['oncoming'],
                                                    inputs['left'])
@@ -194,13 +190,17 @@ class LearningAgent(Agent):
             
             if (self.Result.TrialCount > 60):
                 self.Result.Rewards.append(reward)
+
+            if (self.Result.TrialCount > 89):
+                print self.QLearn.q
+                
+
                 
             
             # sense the env again
             self.next_waypoint = self.planner.next_waypoint()
             inputs = self.env.sense(self)
-            stateAfterMove = self.getStateFromInputs(self.getAgentLocation(), 
-                                                   self.next_waypoint, 
+            stateAfterMove = self.getStateFromInputs(self.next_waypoint, 
                                                    inputs['light'], 
                                                    inputs['oncoming'],
                                                    inputs['left'])

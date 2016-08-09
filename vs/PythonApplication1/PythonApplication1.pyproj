@@ -27,9 +27,6 @@
     <Compile Include="smartcab\agent.py" />
     <Compile Include="smartcab\environment.py" />
     <Compile Include="smartcab\planner.py" />
-    <Compile Include="smartcab\algorithm_notused.py">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="smartcab\simulator.py" />
     <Compile Include="smartcab\__init__.py" />
     <Compile Include="testcases\MDPTest.py">

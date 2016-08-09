@@ -45,10 +45,8 @@ class Location:
         return not self.__eq__(other)
 
 class State:
-     def __init__(self, location, next_waypoint, light, left, oncoming,  reward=0):
+     def __init__(self, next_waypoint, light, left, oncoming,  reward=0):
         self.StateId = uuid.uuid4()
-        #to be removed
-        self.Location = location
         self.NextWaypoint = next_waypoint
         self.Light = light
         self.Left = left
@@ -173,8 +171,7 @@ class LearningAgent(Agent):
             self.next_waypoint = self.planner.next_waypoint()  # from route planner, also displayed by simulator
             inputs = self.env.sense(self)
             deadline = self.env.get_deadline(self)
-            currentState = self.getStateFromInputs(self.getAgentLocation(), 
-                                                   self.next_waypoint, 
+            currentState = self.getStateFromInputs(self.next_waypoint, 
                                                    inputs['light'], 
                                                    inputs['oncoming'],
                                                    inputs['left'])
@@ -199,8 +196,7 @@ class LearningAgent(Agent):
             # sense the env again
             self.next_waypoint = self.planner.next_waypoint()
             inputs = self.env.sense(self)
-            stateAfterMove = self.getStateFromInputs(self.getAgentLocation(), 
-                                                   self.next_waypoint, 
+            stateAfterMove = self.getStateFromInputs(self.next_waypoint, 
                                                    inputs['light'], 
                                                    inputs['oncoming'],
                                                    inputs['left'])
