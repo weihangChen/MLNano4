@@ -4,6 +4,7 @@ from environment import Agent, Environment
 from planner import RoutePlanner
 from simulator import Simulator
 from enum import Enum
+import copy
 #from algorithm import *
 
 
@@ -21,16 +22,62 @@ from enum import Enum
 # endregion
 
 # region model class
+class QTableSnabShotPerTrial:
+    def __init__(self, states, trialIndex, mistakes):
+        self.states = states
+        self.trialIndex = trialIndex
+        self.mistakes = mistakes
+        self.totalNormalizedQ = 0
+
+
+        
 class Result:
     def __init__(self):
+        # used to calculate total positive and negative rewards
         self.Rewards = []
+        # trial index
         self.TrialCount = 0
+        # history of qtables within trials
+        self.QSnabShots = []
 
     def getStats(self):
         positiveSum = sum([x for x in self.Rewards if x > 0])
         negativeSum = sum([x for x in self.Rewards if x < 0])
         msg = 'total positive reward: {0} / total negative reward: {1}'.format(positiveSum, negativeSum)
         return msg
+
+    def printMistakeStats(self):
+        mistakeSeries = [x.mistakes for x in self.QSnabShots]
+        mistakeStats = [[x.trialIndex, len(x.mistakes)] for x in self.QSnabShots]
+        print mistakeStats
+
+    #see if it converges, how much qtable gets updated
+    def NormalizeAndSumQTable(self):
+        for snabshot in self.QSnabShots: 
+            maxqAllStates = max([x.getMaxQ() for x in snabshot.states])
+            #set normalized qvalue
+            for state in snabshot.states:
+                maxq = state.getMaxQ()
+                state.normalizedQ = maxq/ maxqAllStates
+            #sum up the normalized qvalue
+            snabshot.totalNormalizedQ = sum([x.normalizedQ for x in snabshot.states])
+            
+
+
+    # i can only assume the same states value are populated 
+    def GetNormalizedQValueChangePercentageSeries(self):
+        changeSeriesInPercentage = []
+        count = len(self.QSnabShots)
+        for x in range(0, count - 1):
+            snabshot1 = self.QSnabShots[x]
+            snabshot2 = self.QSnabShots[x+1]
+         
+            changePercentage = int((snabshot2.totalNormalizedQ - snabshot1.totalNormalizedQ) / snabshot1.totalNormalizedQ * 100)
+            changeSeriesInPercentage.append('{0}%'.format(changePercentage))
+        return changeSeriesInPercentage
+
+        
+            
 
 class Location:
     def __init__(self, x, y):
@@ -53,9 +100,14 @@ class State:
         self.Oncoming = oncoming
         self.Reward = reward
         self.SAQs = []
+        self.maxQ = 0
+        self.normalizedQ = 0
 
-
-
+     def getMaxQ(self):
+        maxq = 0
+        if (len(self.SAQs)>0):
+            maxq = max([x.QValue for x in self.SAQs])
+        return maxq
      
      def __eq__(self, other):
         isEqual = self.NextWaypoint == other.NextWaypoint and self.Light == other.Light and self.Left == other.Left and self.Oncoming == other.Oncoming
@@ -85,26 +137,20 @@ class StateActionQValueModel:
 
 
 
-
-
-
-
-
-
 #region qlearning
 class QLearn(object):
     def __init__(self, epsilon=0.1, alpha=0.4, gamma=1):
-        self.q = {}
+        #self.q = {}
         self.epsilon = epsilon
         self.alpha = alpha
         self.gamma = gamma
+        self.mistakes = []
 
     def backwardPropagationQValueFromCurrentStateToPreviousState(self, transitionSAQ, currentStateReward, currentState):
-        maxqCurrentState = max([x.QValue for x in currentState.SAQs])
         if transitionSAQ.QValue == 0:
             transitionSAQ.QValue = currentStateReward
         else:
-            transitionSAQ.QValue = transitionSAQ.QValue + self.alpha * (currentStateReward + self.gamma * maxqCurrentState - transitionSAQ.QValue)
+            transitionSAQ.QValue = transitionSAQ.QValue + self.alpha * (currentStateReward + self.gamma * currentState.getMaxQ() - transitionSAQ.QValue)
 
     def getMaxQValue(self, state):
         return max(x.QValue for x in state.SAQs)
@@ -142,16 +188,25 @@ class LearningAgent(Agent):
         self.QLearn = QLearn(epsilon=0.1, alpha=0.3, gamma=1)
         self.States = []  
         self.Result = Result()
-        
+        self.StartTakingSnabShotIndex = 60
+        self.SnabShotCalIndex = 99
+        self.StartRecordingRewardIndex = 60
+
 
     
 
     def reset(self, destination=None):
         self.planner.route_to(destination) 
+        self.mistakes = []
         # TODO: Prepare for a new trip; reset any variables here, if required
+        if (self.Result.TrialCount > self.StartTakingSnabShotIndex):             
+                self.Result.QSnabShots.append(QTableSnabShotPerTrial(copy.deepcopy(self.States), self.Result.TrialCount, self.mistakes))
         self.Result.TrialCount += 1
-        if (self.Result.TrialCount == 99):
+        if (self.Result.TrialCount > self.SnabShotCalIndex):
             print self.Result.getStats()
+            self.Result.NormalizeAndSumQTable()
+            print self.Result.GetNormalizedQValueChangePercentageSeries()
+            self.Result.printMistakeStats()
 
     def getAgentLocation(self):
         return self.env.agent_states[self]['location']
@@ -181,6 +236,7 @@ class LearningAgent(Agent):
 
             # TODO: Select action according to your policy
             action = self.QLearn.getActionForMaxQValue(currentState)
+            
             # action = random.choice(Environment.valid_actions[1:])
             transitionSAQ = next(x for x in currentState.SAQs if x.Action == action)
             
@@ -188,14 +244,12 @@ class LearningAgent(Agent):
             reward = self.env.act(self, action)
 
             
-            if (self.Result.TrialCount > 60):
+            if (self.Result.TrialCount > self.StartRecordingRewardIndex):
                 self.Result.Rewards.append(reward)
+                if (action != None and self.next_waypoint != action):
+                    self.mistakes.append([t, inputs, self.next_waypoint, action])
 
-            if (self.Result.TrialCount > 89):
-                print self.QLearn.q
-                
-
-                
+    
             
             # sense the env again
             self.next_waypoint = self.planner.next_waypoint()
