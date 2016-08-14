@@ -47,7 +47,7 @@ class Result:
         return msg
 
     def printMistakeStats(self):
-        mistakeSeries = [x.mistakes for x in self.QSnabShots]
+        mistakeSeries = [x.mistakes for x in self.QSnabShots if len(x.mistakes) > 0]
         mistakeStats = [[x.trialIndex, len(x.mistakes)] for x in self.QSnabShots]
         print mistakeStats
 
@@ -58,19 +58,19 @@ class Result:
             #set normalized qvalue
             for state in snabshot.states:
                 maxq = state.getMaxQ()
-                state.normalizedQ = maxq/ maxqAllStates
+                state.normalizedQ = maxq / maxqAllStates
             #sum up the normalized qvalue
             snabshot.totalNormalizedQ = sum([x.normalizedQ for x in snabshot.states])
             
 
 
-    # i can only assume the same states value are populated 
+    # i can only assume the same states value are populated
     def GetNormalizedQValueChangePercentageSeries(self):
         changeSeriesInPercentage = []
         count = len(self.QSnabShots)
         for x in range(0, count - 1):
             snabshot1 = self.QSnabShots[x]
-            snabshot2 = self.QSnabShots[x+1]
+            snabshot2 = self.QSnabShots[x + 1]
          
             changePercentage = int((snabshot2.totalNormalizedQ - snabshot1.totalNormalizedQ) / snabshot1.totalNormalizedQ * 100)
             changeSeriesInPercentage.append('{0}%'.format(changePercentage))
@@ -102,10 +102,11 @@ class State:
         self.SAQs = []
         self.maxQ = 0
         self.normalizedQ = 0
+        self.IsNewlyCreated = False
 
      def getMaxQ(self):
         maxq = 0
-        if (len(self.SAQs)>0):
+        if (len(self.SAQs) > 0):
             maxq = max([x.QValue for x in self.SAQs])
         return maxq
      
@@ -168,12 +169,14 @@ class QLearn(object):
         foundStates = [x for x in agent.States if x == inputState]
         if (len(foundStates) == 0):
             foundState = inputState
+            foundState.IsNewlyCreated = True
             for action in actions:
                 model = StateActionQValueModel(foundState, action)
                 foundState.SAQs.append(model)
             agent.States.append(foundState)
         else:
             foundState = foundStates[0]
+            foundState.IsNewlyCreated = False
         return foundState
 #endregion
 class LearningAgent(Agent):
@@ -246,8 +249,9 @@ class LearningAgent(Agent):
             
             if (self.Result.TrialCount > self.StartRecordingRewardIndex):
                 self.Result.Rewards.append(reward)
+                
                 if (action != None and self.next_waypoint != action):
-                    self.mistakes.append([t, inputs, self.next_waypoint, action])
+                    self.mistakes.append([self.Result.TrialCount, t, inputs, self.next_waypoint, action, currentState.IsNewlyCreated])
 
     
             
